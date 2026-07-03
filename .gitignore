@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.DS_Store
+
+# Claude Code local session state (machine-specific)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# run outputs (regenerable via get_or_run / save_run)
+examples/results/*
+!examples/results/.gitkeep
+examples/runs/
