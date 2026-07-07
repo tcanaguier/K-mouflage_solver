@@ -1,6 +1,4 @@
 """
-kmouflage/growth.py
-=====================
 Linear growth rate f = dlnD+/dN and growth factor D+.
 
 Common ODE (quasi-static, μ_K = 1 in ΛCDM) :
@@ -121,7 +119,6 @@ class LCDMGrowth(GrowthSolver):
         self.Omega_r0 = Omega_r0
         self.Omega_L0 = 1.0 - Omega_m0 - Omega_r0
 
-        # ── Pré-calcul des interpolants γ(N) et S(N) sur grille dense ──────────
         N_bg  = np.linspace(self.N_ini, self.N_end, 10 * N_points)
         E2_bg = self._E2_vec(N_bg)
 
@@ -133,7 +130,6 @@ class LCDMGrowth(GrowthSolver):
         self._S_interp     = interp1d(N_bg, S_bg,     **kw)
 
     def _E2_vec(self, N: np.ndarray) -> np.ndarray:
-        """E²(N) = (H/H0)²"""
         return np.exp(2*N)*(
             self.Omega_m0 * np.exp(-3.0 * N)
             + self.Omega_r0 * np.exp(-4.0 * N)
@@ -141,19 +137,18 @@ class LCDMGrowth(GrowthSolver):
         )
 
     def _E_conf(self, N: np.ndarray, E2: np.ndarray) -> np.ndarray:
-        """Hubble conforme normalisé : E_conf = ℋ/H0 = a·H/H0 = e^N · √(E²(N))"""
         return np.sqrt(E2)
 
     def _gamma_vec(self, N: np.ndarray, E2_conf: np.ndarray) -> np.ndarray:
         dE2_conf_dN = (
             -1.0 * self.Omega_m0 * np.exp(-1.0 * N)
             - 2.0 * self.Omega_r0 * np.exp(-2.0 * N)
+            + 2.0 * self.Omega_L0 * np.exp(2.0 * N)
         )
         dlnEconf_dN = 0.5 * dE2_conf_dN / E2_conf
         return 1.0 + dlnEconf_dN
 
     def _Omega_m_vec(self, N: np.ndarray, E2_conf: np.ndarray) -> np.ndarray:
-        """Ω_m(N) = Ω_m0·e^{-3N} / E²(N)"""
         return self.Omega_m0 * np.exp(-1.0 * N) / E2_conf
 
     def run(self, verbose: bool = True) -> dict:
@@ -235,7 +230,7 @@ class KmouflageGrowth(GrowthSolver):
 
         super().__init__(N_ini=N_MDE, N_end=bg.N_end, N_points=N_points, rtol=rtol, atol=atol)
 
-        # ── Pré-calcul des interpolants γ(N) et S(N) sur grille dense ──────────
+        # Pré-calcul des interpolants γ(N) et S(N) sur grille dense
         N_bg = np.linspace(self.N_ini, self.N_end, 10 * N_points)
 
         H_conf       = bg.E_conf(N_bg)
@@ -250,7 +245,7 @@ class KmouflageGrowth(GrowthSolver):
         self._gamma_interp = interp1d(N_bg, gamma_bg, **kw)
         self._S_interp     = interp1d(N_bg, S_bg,     **kw)
 
-        # ── Rapport Ω_r/Ω_m à N_MDE : doit être ≪ 1 ────────────────────────────
+        # Rapport Ω_r/Ω_m à N_MDE : doit être ≪ 1
         Om_ini = float(bg.Omega_m(self.N_ini))
         Or_ini = float(bg.Omega_r(self.N_ini))
         mu_ini = float(bg.mu_K(self.N_ini))
@@ -279,7 +274,7 @@ class KmouflageGrowth(GrowthSolver):
         H_conf_prime_arr = self.bg.H_conf_prime(N_eval)
         mu_K_arr         = self.bg.mu_K(N_eval)
         Omega_m_arr      = self.bg.Omega_m(N_eval)
-        gamma_arr        = 1.0 + H_conf_prime_arr / H_conf_arr*2
+        gamma_arr        = 1.0 + H_conf_prime_arr / H_conf_arr**2
         S_arr            = 1.5 * mu_K_arr * Omega_m_arr
 
         if verbose:

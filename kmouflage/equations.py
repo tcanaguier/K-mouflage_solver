@@ -1,17 +1,10 @@
 """
-kmouflage/equations.py
-=======================
 Pure K-mouflage equations of motion (background level).
 
 Every function here is stateless: it takes a ``Physics`` context (model +
 coupling + potential + cosmological constants) plus the current field state
-(phi, phi_prime, a, H_conf) and returns a physical quantity. None of them
-depend on a solver instance, so they can be tested or reused independently
-of the ODE integration machinery in solver.py.
+(phi, phi_prime, a, H_conf) and returns a physical quantity.
 
-No import from models/ happens at runtime (only under TYPE_CHECKING for
-type hints), so models/k_functions.py can import this module without
-creating an import cycle.
 """
 
 from __future__ import annotations
@@ -20,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+from scipy.optimize import brentq
 
 if TYPE_CHECKING:
     from .models.couplings import ConformalCoupling
@@ -184,3 +178,63 @@ def linear_system(phys: Physics, phi, phi_prime, a, H_conf):
     H_conf_prime = sol_norm[1]
 
     return M, phi_prime2, H_conf_prime
+
+
+def attractor_u_ini(phys: Physics, phi0, a_ini, Omega_m0, Omega_r0) -> float:
+    """
+    Attractor solution for the initial dimensionless field velocity ũ_ini
+    in the radiation-dominated era (eq. 300/305). Generic for any K(X)
+    model that behaves like standard k-essence/quintessence (K(X) → X-1)
+    near X=0 used as the default u_ini for the power-law and arctan
+    KModels (see models/k_functions.py, which wraps this in a thin
+    solver-facing adapter matching KModel.u_ini's u_ini(solver)->float
+    contract).
+    """
+    alpha0     = phys.alpha(phi0)
+    alpha_phi0 = phys.alpha_phi(phi0)
+    F_ini      = F(phys, phi0)
+
+    # Conformal Hubble in RDE: H_conf ≈ √Ω_{r,0} · a⁻¹
+    E_ini = np.sqrt(Omega_r0) * a_ini**(-1)
+
+    # Attractor constant R (eq. 300) — constant throughout the RDE
+    R = -3.0 * alpha0 * Omega_m0 / (2.0 * np.sqrt(Omega_r0))
+
+    if R == 0.0:
+        return 0.0
+
+    def g(phi_prime):
+        Z_  = Z(phys, phi0, phi_prime, a_ini)
+        val = Z_ * phi_prime - R
+        # field-dependent coupling correction (eq. 305)
+        if alpha_phi0 != 0.0:
+            val += 3.0 * F_ini * alpha0 * alpha_phi0 * phi_prime**2 / E_ini
+        return val
+
+    # Linear seed: φ'_lin = R / Z(X→0), gives the initial bracket endpoint
+    Z0 = Z(phys, phi0, 0.0, a_ini)
+    if abs(Z0) < 1e-30:
+        Z0 = 1.0
+    phi_prime_lin = R / Z0
+
+    # Bracket: [phi_prime_lin, 0] for R<0, [0, phi_prime_lin] for R>0.
+    # g(0) = -R has opposite sign to g(phi_prime_lin) in the screened regime.
+    lo = min(phi_prime_lin, 0.0)
+    hi = max(phi_prime_lin, 0.0)
+
+    # Safety expansion of the non-zero endpoint until sign change confirmed
+    for _ in range(80):
+        if g(lo) * g(hi) < 0:
+            break
+        if R < 0:
+            lo *= 2.0
+        else:
+            hi *= 2.0
+    else:
+        raise RuntimeError(
+            f"attractor_u_ini: bracket failed for model={phys.model.name!r}, "
+            f"phi0={phi0:.3e}, a_ini={a_ini:.3e}, R={R:.3e}"
+        )
+
+    phi_prime_ini = brentq(g, lo, hi, xtol=1e-12, rtol=1e-10)
+    return float(phi_prime_ini / E_ini)

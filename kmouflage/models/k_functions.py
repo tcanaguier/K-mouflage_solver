@@ -1,6 +1,4 @@
 """
-kmouflage/models/k_functions.py
-================================
 K-mouflage kinetic functions K(X), K'(X), K''(X) and their initial conditions.
 
 Each model is packaged as a ``KModel`` dataclass whose ``u_ini`` callable
@@ -17,71 +15,22 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Callable
-from scipy.optimize import brentq
 
 from .. import equations as eq
 
 
 def attractor_u_ini(solver) -> float:
     """
-    Attractor solution for ũ_ini in the radiation-dominated era (eq. 300/305).
-    Uses solver._phys (built by KMouflageBackground.run() before u_ini is
-    called) and the pure equations.Z/F functions rather than private solver
-    methods.
+    Solver-facing adapter matching KModel.u_ini's u_ini(solver)->float
+    contract. The actual physics — the radiation-dominated attractor solve
+    (eq. 300/305) — is stateless and lives in equations.attractor_u_ini,
+    which only needs (phys, phi0, a_ini, Omega_m0, Omega_r0) and is
+    reusable/testable independently of the solver.
     """
-    s     = solver
-    phys  = s._phys
-    phi0  = s.ic.phi_ini
-    a_ini = np.exp(s.N_ini)
-
-    alpha0     = phys.alpha(phi0)
-    alpha_phi0 = phys.alpha_phi(phi0)
-    F_ini      = eq.F(phys, phi0)
-
-    # Conformal Hubble in RDE: H_conf ≈ √Ω_{r,0} · a⁻¹
-    E_ini = np.sqrt(s.cosmo.Omega_r0) * a_ini**(-1)
-
-    # Attractor constant R (eq. 300) — constant throughout the RDE
-    R = -3.0 * alpha0 * s.cosmo.Omega_m0 / (2.0 * np.sqrt(s.cosmo.Omega_r0))
-
-    if R == 0.0:
-        return 0.0
-
-    def g(phi_prime):
-        Z_  = eq.Z(phys, phi0, phi_prime, a_ini)
-        val = Z_ * phi_prime - R
-        # field-dependent coupling correction (eq. 305)
-        if alpha_phi0 != 0.0:
-            val += 3.0 * F_ini * alpha0 * alpha_phi0 * phi_prime**2 / E_ini
-        return val
-
-    # Linear seed: φ'_lin = R / Z(X→0), gives the initial bracket endpoint
-    Z0 = eq.Z(phys, phi0, 0.0, a_ini)
-    if abs(Z0) < 1e-30:
-        Z0 = 1.0
-    phi_prime_lin = R / Z0
-
-    # Bracket: [phi_prime_lin, 0] for R<0, [0, phi_prime_lin] for R>0.
-    # g(0) = -R has opposite sign to g(phi_prime_lin) in the screened regime.
-    lo = min(phi_prime_lin, 0.0)
-    hi = max(phi_prime_lin, 0.0)
-
-    # Safety expansion of the non-zero endpoint until sign change confirmed
-    for _ in range(80):
-        if g(lo) * g(hi) < 0:
-            break
-        if R < 0:
-            lo *= 2.0
-        else:
-            hi *= 2.0
-    else:
-        raise RuntimeError(
-            f"attractor_u_ini: bracket failed for model={s.model.name!r}, "
-            f"phi0={phi0:.3e}, a_ini={a_ini:.3e}, R={R:.3e}"
-        )
-
-    phi_prime_ini = brentq(g, lo, hi, xtol=1e-12, rtol=1e-10)
-    return float(phi_prime_ini / E_ini)
+    s = solver
+    return eq.attractor_u_ini(
+        s._phys, s.ic.phi_ini, np.exp(s.N_ini), s.cosmo.Omega_m0, s.cosmo.Omega_r0,
+    )
 
 
 @dataclass
@@ -112,10 +61,6 @@ class KModel:
         return f"KModel({self.name})"
 
 
-# ---------------------------------------------------------------------------
-# Power-law model   K(X) = -1 + X + K0 * X^m
-# ---------------------------------------------------------------------------
-
 def make_powerlaw_K(K0: float, m: int) -> KModel:
     """
     Build a power-law K-model:
@@ -135,7 +80,6 @@ def make_powerlaw_K(K0: float, m: int) -> KModel:
     if m < 1:
         raise ValueError(f"Exponent m must be ≥ 1, got {m}.")
 
-    # ---- K, K', K'' in terms of the Einstein-frame variable X ----
     def K(X: float) -> float:
         return -1.0 + X + K0 * X**m
 

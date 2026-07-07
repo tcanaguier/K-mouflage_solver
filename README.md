@@ -20,17 +20,23 @@ kmouflage/                       # package Python (le solveur)
 │                                 #   (intégration ODE + post-traitement + get_physical)
 ├── calibrate_M4.py               # calibrate_M4_tilde(bg, ...) : calibre M4_tilde sur Ω_DE(0)
 ├── verify.py                    # verify(bg) : rapport de diagnostics physiques/numériques
+│                                 #   (en développement, voir "Travaux en cours" ci-dessous)
 ├── growth.py                    # GrowthSolver (base commune) + KmouflageGrowth + LCDMGrowth
-└── io_utils.py                  # save_run() / load_run() : param.ini + data.npz
+└── io_utils.py                  # run_solver() / save_run() / load_run() : param.ini + data.npz
 
 examples/
 ├── example_background.ipynb     # comparaison power-law / arctan / ΛCDM
-├── comparison_potential.ipynb   # sans / avec potentiel de quintessence, fσ8 vs DESI DR1
-└── results/                     # sorties de save_run() (param.ini + data.npz par run)
+└── comparison_potential.ipynb   # sans / avec potentiel de quintessence, fσ8 vs DESI DR1
+
+runs/                             # cache des runs (créé à la volée par run_solver/save_run)
+├── index.csv                    # une ligne par run : clé de config, chemin, params
+└── <nom_du_run>/                # param.ini + data.npz par run
 ```
 
 Le solveur numérique (`kmouflage/`) est entièrement séparé des notebooks
-d'exemple (`examples/`).
+d'exemple (`examples/`). `runs/` n'est ni l'un ni l'autre : c'est le cache
+de `run_solver()`, utilisable depuis les notebooks comme depuis n'importe
+quel futur script (ex. une vraisemblance MCMC).
 
 ## Dépendances
 
@@ -44,36 +50,39 @@ from kmouflage import (
     make_powerlaw_K, make_exponential_coupling, make_exponential_potential,
     calibrate_M4_tilde, verify,
     KmouflageGrowth, LCDMGrowth,
-    save_run, load_run,
+    save_run, load_run, run_solver,
 )
 
-# ── modèle et couplage ────────────────────────────────────────────────────
+# modèle et couplage
 model    = make_powerlaw_K(K0=1, m=3)
 coupling = make_exponential_coupling(beta=0.1)
 cosmo    = CosmologicalParams(H0_input=67.36, Omega_m0=0.25)
 
-# ── fond, sans potentiel (comportement par défaut) ────────────────────────
+# fond, sans potentiel (comportement par défaut)
 bg = KMouflageBackground(model=model, coupling=coupling, cosmo=cosmo)
 bg.run()
 verify(bg)
 
-# ── fond, avec un potentiel de quintessence (optionnel) ───────────────────
+# fond, avec un potentiel de quintessence (optionnel)
 bg_quint = KMouflageBackground(
     model=model, coupling=coupling, cosmo=cosmo,
     potential=make_exponential_potential(V0=0.7, lam=1.0),
 )
-calibrate_M4_tilde(bg_quint, target_Omega_DE=0.75)
+calibrate_M4_tilde(bg_quint, target_Omega_DE=1.0 - cosmo.Omega_m0 - cosmo.Omega_r0)
 
-# ── croissance linéaire ────────────────────────────────────────────────────
+# croissance linéaire
 kg = KmouflageGrowth(bg, N_points=2000)
 results_k = kg.run()
 
 lcdm = LCDMGrowth(Omega_m0=cosmo.Omega_m0, Omega_r0=cosmo.Omega_r0)
 results_l = lcdm.run()
 
-# ── sauvegarde / rechargement d'un run ─────────────────────────────────────
-path   = save_run(bg, "examples/results", "power_law_beta0.1")
-loaded = load_run(path)   # {"params": ConfigParser, "data": dict[str, ndarray]}
+# sauvegarde / rechargement manuels d'un run déjà résolu
+path   = save_run(bg, "power_law_beta0.1")   # outdir par défaut : runs/
+loaded = load_run(path)   # {"params": ConfigParser, "data": dict[str, ndarray], "run_dir": str}
+
+# run_solver : lance ou recharge depuis le cache (clé = hash de la config)
+cached = run_solver(model, coupling, cosmo=cosmo)   # même format de retour que load_run()
 ```
 
 Le potentiel scalaire (`potential=...`) est optionnel : par défaut,
@@ -88,5 +97,22 @@ Le potentiel scalaire (`potential=...`) est optionnel : par défaut,
   quintessence (calibration de M4_tilde par λ, écarts au modèle nu,
   fσ8(z) comparé à DESI DR1).
 
-Les sorties sauvegardées via `save_run()` sont écrites dans
-`examples/results/<nom_du_run>/` (un `param.ini` lisible + un `data.npz`).
+Les sorties sauvegardées via `save_run()`/`run_solver()` sont écrites dans
+`runs/<nom_du_run>/` (un `param.ini` lisible + un `data.npz`), avec un
+`runs/index.csv` qui indexe chaque run par un hash de sa configuration.
+
+## Travaux en cours
+
+- **`verify.py`** est un module en développement actif : la version présente
+  sur ce dépôt est un état intermédiaire, pas l'implémentation finale (par
+  exemple, le check d'identité `ρ_φ + p_φ = Z·φ̃'²/a²` n'est pas encore
+  formalisé — il échoue dès qu'un potentiel `V(φ)` est actif). À ne pas
+  considérer comme un rapport de validation complet en l'état.
+- **Verbosité** : `verbose` est aujourd'hui un booléen partout (`run()`,
+  `calibrate_M4_tilde`, `KmouflageGrowth`/`LCDMGrowth`, `run_solver`...).
+  Un vrai niveau de verbosité gradué (0 = silencieux, puis des paliers
+  croissants : conditions initiales, checks physiques, détail de
+  l'intégration) est prévu, entre autres pour donner à `verify()` des
+  niveaux de sortie plus ciblés que le rapport complet actuel.
+- Tests unitaires (`pytest`), packaging (`pyproject.toml`) et CI ne sont pas
+  encore en place.

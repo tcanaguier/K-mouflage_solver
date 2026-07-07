@@ -12,7 +12,10 @@ env/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
-# run outputs (regenerable via get_or_run / save_run)
-examples/results/*
-!examples/results/.gitkeep
+# Extra document used for testing or organization, aka not part of the project
+*.pdf
+TODO.txt 
+
+# run outputs (regenerable via run_solver / save_run)
+/runs/
 examples/runs/
