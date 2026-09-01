@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.DS_Store
+
+# Claude Code local session state (machine-specific)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Extra document used for testing or organization, aka not part of the project
+*.pdf
+TODO.txt 
+
+# run outputs (regenerable via run_solver / save_run)
+/runs/
+examples/runs/
+
+# Kinessence: separate article project, not part of the Kmouflage package
+/Kinessence/
