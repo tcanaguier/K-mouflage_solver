@@ -35,15 +35,14 @@ class Physics:
     def A(self, phi):         return self.coupling.A(phi)
     def alpha(self, phi):     return self.coupling.alpha(phi)
     def alpha_phi(self, phi): return self.coupling.alpha_phi(phi)
-    def K(self, X):           return self.model.K(X)
-    def Kp(self, X):          return self.model.Kp(X)
-    def Kpp(self, X):         return self.model.Kpp(X)
-    def V(self, phi):         return self.potential.V(phi)
-    def V_phi(self, phi):     return self.potential.V_phi(phi)
+    def K(self, X):            return self.model.K(X)
+    def Kp(self, X):           return self.model.Kp(X)
+    def Kpp(self, X):          return self.model.Kpp(X)
+    def f_pot(self, phi):      return self.potential.f(phi)
+    def f_pot_phi(self, phi):  return self.potential.f_phi(phi)
 
 
 def H(E_conf, a) -> float:
-    """Physical Hubble rate normalized by H0: H/H0 = E_conf/a (E_conf = ℋ/H0)."""
     return E_conf / a
 
 
@@ -105,8 +104,7 @@ def rho_phi(phys: Physics, phi, phi_prime, a) -> float:
     av = phys.alpha(phi)
     A4 = phys.A(phi) ** (-4)
     return ((Z_ + 3.0 * F_ * av ** 2) * phi_prime ** 2 / a ** 2
-            - A4 * phys.M4_tilde * phys.K(X_)
-            + A4 * phys.V(phi))
+            - A4 * phys.M4_tilde * (phys.K(X_) - phys.f_pot(phi)))
 
 
 def p_phi(phys: Physics, phi, phi_prime, a) -> float:
@@ -115,8 +113,7 @@ def p_phi(phys: Physics, phi, phi_prime, a) -> float:
     av = phys.alpha(phi)
     A4 = phys.A(phi) ** (-4)
     return (- 3.0 * F_ * av ** 2 * phi_prime ** 2 / a ** 2
-            + A4 * phys.M4_tilde * phys.K(X_)
-            - A4 * phys.V(phi))
+            + A4 * phys.M4_tilde * (phys.K(X_) - phys.f_pot(phi)))
 
 
 def E_conf_from_F1(phys: Physics, phi, phi_prime, a) -> float:
@@ -149,8 +146,8 @@ def linear_system(phys: Physics, phi, phi_prime, a, H_conf):
         [-F_phi(phys, phi),              2.0 * F_     ],
     ])
 
-    V_  = phys.V(phi)
-    Vp_ = phys.V_phi(phi)
+    f_  = phys.f_pot(phi)
+    fp_ = phys.f_pot_phi(phi)
 
     d1 = (
         - 2.0 * H_conf * (Z_ - A2 * X_ * Kpp) * phi_prime
@@ -165,7 +162,7 @@ def linear_system(phys: Physics, phi, phi_prime, a, H_conf):
 
         - 6.0 * av * F_ * H_conf ** 2
 
-        + a ** 2 * A4 * (4.0 * av * V_ - Vp_)
+        + a ** 2 * A4 * phys.M4_tilde * (4.0 * av * f_ - fp_)
     )
 
     d2 = (- 2.0 * F_ * (2.0 * av ** 2 - ap) * phi_prime ** 2
@@ -180,25 +177,14 @@ def linear_system(phys: Physics, phi, phi_prime, a, H_conf):
     return M, phi_prime2, H_conf_prime
 
 
-def attractor_u_ini(phys: Physics, phi0, a_ini, Omega_m0, Omega_r0) -> float:
-    """
-    Attractor solution for the initial dimensionless field velocity ũ_ini
-    in the radiation-dominated era (eq. 300/305). Generic for any K(X)
-    model that behaves like standard k-essence/quintessence (K(X) → X-1)
-    near X=0 used as the default u_ini for the power-law and arctan
-    KModels (see models/k_functions.py, which wraps this in a thin
-    solver-facing adapter matching KModel.u_ini's u_ini(solver)->float
-    contract).
-    """
+def attractor_u_ini(phys: Physics, phi0, a_ini, omega_m, omega_r) -> float:
     alpha0     = phys.alpha(phi0)
     alpha_phi0 = phys.alpha_phi(phi0)
     F_ini      = F(phys, phi0)
 
-    # Conformal Hubble in RDE: H_conf ≈ √Ω_{r,0} · a⁻¹
-    E_ini = np.sqrt(Omega_r0) * a_ini**(-1)
-
-    # Attractor constant R (eq. 300) — constant throughout the RDE
-    R = -3.0 * alpha0 * Omega_m0 / (2.0 * np.sqrt(Omega_r0))
+    
+    E_ini = np.sqrt(omega_r) * a_ini**(-1)
+    R = -3.0 * alpha0 * omega_m / (2.0 * np.sqrt(omega_r))
 
     if R == 0.0:
         return 0.0
@@ -206,23 +192,22 @@ def attractor_u_ini(phys: Physics, phi0, a_ini, Omega_m0, Omega_r0) -> float:
     def g(phi_prime):
         Z_  = Z(phys, phi0, phi_prime, a_ini)
         val = Z_ * phi_prime - R
-        # field-dependent coupling correction (eq. 305)
+
         if alpha_phi0 != 0.0:
             val += 3.0 * F_ini * alpha0 * alpha_phi0 * phi_prime**2 / E_ini
         return val
 
-    # Linear seed: φ'_lin = R / Z(X→0), gives the initial bracket endpoint
+    
     Z0 = Z(phys, phi0, 0.0, a_ini)
     if abs(Z0) < 1e-30:
         Z0 = 1.0
     phi_prime_lin = R / Z0
 
-    # Bracket: [phi_prime_lin, 0] for R<0, [0, phi_prime_lin] for R>0.
-    # g(0) = -R has opposite sign to g(phi_prime_lin) in the screened regime.
+
     lo = min(phi_prime_lin, 0.0)
     hi = max(phi_prime_lin, 0.0)
 
-    # Safety expansion of the non-zero endpoint until sign change confirmed
+    # safety 
     for _ in range(80):
         if g(lo) * g(hi) < 0:
             break

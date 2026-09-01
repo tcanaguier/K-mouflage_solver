@@ -6,36 +6,33 @@ from typing import Callable
 
 @dataclass
 class Potential:
-    """
-    Optional scalar-field potential V(phi), added to the K-mouflage
-    equations of motion (see equations.py). Defaults to no potential
-    (V=0 everywhere) via make_no_potential(), matching the KMouflageBackground
-    default.
-    """
+    """Dimensionless f(φ): L_φ = M⁴·(K(X) - f(φ)). No free amplitude, M⁴ carries it."""
     name:   str
-    V:      Callable[[float], float]
-    V_phi:  Callable[[float], float]
+    f:      Callable[[float], float]
+    f_phi:  Callable[[float], float]
     params: dict = field(default_factory=dict)
 
     def __repr__(self) -> str:
         return f"Potential({self.name})"
 
 
-def make_no_potential() -> Potential:
+def make_constant_potential() -> Potential:
+    """f(φ) ≡ 1, standard K-mouflage (K(0)=-1 normalization). Default potential."""
     return Potential(
-        name   = "none (V=0)",
-        V      = lambda phi: 0.0,
-        V_phi  = lambda phi: 0.0,
+        name   = "constant (f=1)",
+        f      = lambda phi: 1.0,
+        f_phi  = lambda phi: 0.0,
         params = {},
     )
 
 
-def make_exponential_potential(V0: float = 0.7, lam: float = 1.0) -> Potential:
-    def V(phi):     return V0 * np.exp(-lam * phi)
-    def V_phi(phi): return -lam * V(phi)
+def make_exponential_potential(lam: float = 1.0) -> Potential:
+    """f(φ) = e^{-λφ}, f(0)=1 (lam=0 reduces to make_constant_potential())."""
+    def f(phi):     return np.exp(-lam * phi)
+    def f_phi(phi): return -lam * f(phi)
     return Potential(
-        name   = f"exponential (V0={V0}, lam={lam})",
-        V      = V,
-        V_phi  = V_phi,
-        params = {"V0": V0, "lam": lam},
+        name   = f"exponential (lam={lam})",
+        f      = f,
+        f_phi  = f_phi,
+        params = {"lam": lam},
     )

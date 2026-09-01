@@ -19,3 +19,6 @@ TODO.txt
 # run outputs (regenerable via run_solver / save_run)
 /runs/
 examples/runs/
+
+# Kinessence: separate article project, not part of the Kmouflage package
+/Kinessence/

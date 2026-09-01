@@ -1,23 +1,3 @@
-"""
-Linear growth rate f = dlnD+/dN and growth factor D+.
-
-Common ODE (quasi-static, μ_K = 1 in ΛCDM) :
-
-    df/dN + f² + γ(N)·f - (3/2)·μ_K(N)·Ω_m(N) = 0
-    d(ln D+)/dN = f
-
-GrowthSolver carries only the shared ODE machinery. The two concrete
-solvers differ in how γ(N) and S(N) = (3/2)·μ_K·Ω_m are produced:
-
-- LCDMGrowth uses a closed-form analytic ΛCDM background (Omega_m0,
-  Omega_r0), completely independent of KMouflageBackground — this is
-  deliberate: deriving the ΛCDM limit through the K-mouflage numerical
-  solver (e.g. with a zero coupling) would let the K-mouflage solver's
-  numerical error contaminate what has an exact analytic solution.
-- KmouflageGrowth derives γ(N)/S(N) from the interpolators of an already
-  integrated KMouflageBackground.
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -27,8 +7,7 @@ from scipy.interpolate import interp1d
 
 class GrowthSolver:
     """
-    Shared ODE core for f/D+. Subclasses must set self._gamma_interp and
-    self._S_interp (interpolants of N) before calling run().
+    Shared ODE core resolution for f/D+.
     """
 
     def __init__(
@@ -91,15 +70,7 @@ class GrowthSolver:
 
 class LCDMGrowth(GrowthSolver):
     """
-    ΛCDM growth solver (eq. 129, μ_K = 1), analytic closed-form background:
-
-        E²(N)     = Ω_m0·e^{-3N} + Ω_r0·e^{-4N} + Ω_Λ0
-        E_conf(N) = e^N · √(E²(N))
-        γ(N)      = 1 + d(ln E_conf)/dN
-        S(N)      = (3/2)·Ω_m(N)
-        Ω_m(N)    = Ω_m0·e^{-3N} / E²(N)
-
-    Completely independent of KMouflageBackground.
+    ΛCDM growth solver.
     """
 
     def __init__(
@@ -201,11 +172,9 @@ class LCDMGrowth(GrowthSolver):
 
 class KmouflageGrowth(GrowthSolver):
     """
-    K-mouflage growth solver. γ(N)/S(N) are derived from the interpolators
-    of an already-integrated KMouflageBackground (bg).
-
+    K-mouflage growth solver. 
     The background starts at z_ini ~ 1e5 (RDE); the growth ODE must start
-    well into MDE for f=1 to be a valid initial condition, hence
+    well into MDE for fgrowth=1 to be a valid initial condition, hence
     N_MDE = N_eq + N_offset (N_offset e-folds after matter-radiation
     equality, default 5).
     """
@@ -245,7 +214,7 @@ class KmouflageGrowth(GrowthSolver):
         self._gamma_interp = interp1d(N_bg, gamma_bg, **kw)
         self._S_interp     = interp1d(N_bg, S_bg,     **kw)
 
-        # Rapport Ω_r/Ω_m à N_MDE : doit être ≪ 1
+        
         Om_ini = float(bg.Omega_m(self.N_ini))
         Or_ini = float(bg.Omega_r(self.N_ini))
         mu_ini = float(bg.mu_K(self.N_ini))
@@ -255,17 +224,17 @@ class KmouflageGrowth(GrowthSolver):
         z_MDE = float(1.0 / np.exp(self.N_ini) - 1.0)
         z_eq  = float(1.0 / bg.aeq - 1.0)
 
-        print(f"[Kmouflage] N_eq={N_eq:.3f}  (z_eq={z_eq:.0f})")
-        print(f"[Kmouflage] N_MDE={self.N_ini:.3f}  (z_MDE={z_MDE:.0f}, "
-              f"{N_offset:.1f} e-folds après a_eq)")
-        print(f"[Kmouflage] CI check à N_MDE :")
-        print(f"             Ω_r/Ω_m = {ratio:.4f}  (attendu ≪ 1)")
-        print(f"             μ_K     = {mu_ini:.6f}  (attendu ≈ 1)")
-        print(f"             F       = {F_ini:.6f}  (attendu ≈ 1)")
+        # print(f"[Kmouflage] N_eq={N_eq:.3f}  (z_eq={z_eq:.0f})")
+        # print(f"[Kmouflage] N_MDE={self.N_ini:.3f}  (z_MDE={z_MDE:.0f}, "
+        #       f"{N_offset:.1f} e-folds après a_eq)")
+        # print(f"[Kmouflage] CI check à N_MDE :")
+        # print(f"             Ω_r/Ω_m = {ratio:.4f}  (attendu ≪ 1)")
+        # print(f"             μ_K     = {mu_ini:.6f}  (attendu ≈ 1)")
+        # print(f"             F       = {F_ini:.6f}  (attendu ≈ 1)")
 
-        if ratio > 0.1:
-            print(f"  ⚠ ATTENTION : Ω_r/Ω_m={ratio:.3f} > 0.1 — "
-                  f"augmenter N_offset (actuellement {N_offset})")
+        # if ratio > 0.1:
+        #     print(f"  ⚠ ATTENTION : Ω_r/Ω_m={ratio:.3f} > 0.1, "
+        #           f"augmenter N_offset (actuellement {N_offset})")
 
     def run(self, verbose: bool = True) -> dict:
         N_eval, f, Dp, a_arr, z_arr = self._integrate()

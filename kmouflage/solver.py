@@ -9,24 +9,20 @@ from . import equations as eq
 from .equations import Physics
 from .models.k_functions import KModel
 from .models.couplings import ConformalCoupling
-from .models.potential import Potential, make_no_potential
+from .models.potential import Potential, make_constant_potential
 
 
 @dataclass
 class CosmologicalParams:
-    H0:         float = 1.0
-    H0_input:   float = 67.36     # unit [km/s/Mpc]]
+    H100:       float = 100.0     # fixed reference unit [km/s/Mpc]
+
     Mpl:        float = 1.0
     M_Pl_input: float = 2.435e18  # unit [GeV]
-    Omega_m0:   float = 0.25
-    Omega_r0:   float = 8.4e-5
-    M4_tilde:   float = None
 
-    def __post_init__(self) -> None:
-        if self.M4_tilde is None:
-            self.M4_tilde = 3.0 * (1.0 - self.Omega_m0 - self.Omega_r0)
-        if self.M4_tilde <= 0:
-            raise ValueError(f"M4_tilde = {self.M4_tilde:.3e} <= 0.")
+    omega_m:    float = 0.1430    # Omega_m0 * h^2 (Planck 2018), fixed physical density
+    omega_r:    float = 4.15e-5   # Omega_r0 * h^2 (Planck 2018), fixed physical density
+
+    M4_tilde:   float = 1.0       # amplitude of the K-mouflage kinetic term
 
 
 @dataclass
@@ -52,7 +48,7 @@ class KMouflageBackground:
         self.coupling  = coupling
         self.cosmo     = cosmo or CosmologicalParams()
         self.ic        = ic    or InitialConditions()
-        self.potential = potential or make_no_potential()
+        self.potential = potential or make_constant_potential()
         self.rtol      = rtol
         self.atol      = atol
         self.max_step  = max_step
@@ -60,22 +56,18 @@ class KMouflageBackground:
 
         c = self.cosmo
         self.M4_tilde     = c.M4_tilde
-        self.rho_m0_tilde = 3.0 * c.Omega_m0
-        self.rho_r0_tilde = 3.0 * c.Omega_r0
+        self.rho_m0_tilde = 3.0 * c.omega_m
+        self.rho_r0_tilde = 3.0 * c.omega_r
 
-        self.aeq   = c.Omega_r0 / c.Omega_m0
-        self.teq   = self.aeq**2 / (2.0 * np.sqrt(c.Omega_r0))
+        self.aeq   = c.omega_r / c.omega_m
+        self.teq   = self.aeq**2 / (2.0 * np.sqrt(c.omega_r))
         self.N_ini = np.log(1.0 / (1.0 + self.ic.z_ini))
         self.N_end = 0.0
 
         self._phys: Physics | None = None
 
     def _build_physics(self) -> Physics:
-        """
-        Rebuilt at the start of every run() so that a mutation of
-        M4_tilde/potential/model/coupling between two run() calls (e.g. by
-        calibrate_M4.calibrate_M4_tilde) is picked up.
-        """
+        """Rebuilt on every run() so a mutation of M4_tilde/model/coupling/potential (e.g. by calibrate_M4_tilde) is picked up."""
         return Physics(
             model        = self.model,
             coupling     = self.coupling,
@@ -86,10 +78,7 @@ class KMouflageBackground:
         )
 
     def _phi_prime_fixed_point(self, phi, u, a):
-        """
-        Fixed-point iteration phi_prime = E_conf(phi, phi_prime, a) * u,
-        since E_conf_from_F1 itself depends on phi_prime through rho_phi.
-        """
+        """Fixed-point iteration phi_prime = E_conf(phi, phi_prime, a) * u, since E_conf depends on phi_prime through rho_phi."""
         phi_prime = 0.0
         E_conf = None
         for _ in range(20):
@@ -146,20 +135,35 @@ class KMouflageBackground:
 
         if verbose:
             print(f"\n[RUN] z_ini={self.ic.z_ini:.1e} | "
-                  f"Omega_m={self.cosmo.Omega_m0} | Omega_r={self.cosmo.Omega_r0}")
+                  f"omega_m={self.cosmo.omega_m} | omega_r={self.cosmo.omega_r}")
 
         sol = self._integrate_once()
         self._build_interpolators(sol)
+
+        self.h_predicted         = float(self.E_conf(0.0))
+        self.H0_predicted        = self.h_predicted * self.cosmo.H100
+        self.Omega_m0_predicted  = float(self.Omega_m(0.0))
+        self.Omega_r0_predicted  = float(self.Omega_r(0.0))
+        self.Omega_de0_predicted = float(self.Omega_de_def(0.0))
 
         if verbose:
             phi_f = sol.y[0, -1]
             M_Pl0_eff = np.sqrt(self._F(phi_f))
             print(f"[OK] φ̃(z=0)={phi_f:.4e} | M_Pl0_eff={M_Pl0_eff:.6f} | "
-                  f"delta_Mpl={M_Pl0_eff - 1.0:+.4e} | "
-                  f"E_conf(z=0)={self.E_conf(0.0):.6f} | "
-                  f"delta_H={self.E_conf(0.0) - 1.0:+.4e}")
+                  f"delta_Mpl={M_Pl0_eff - 1.0:+.4e}")
+            print(f"[PREDICTED] h={self.h_predicted:.6f} | "
+                  f"H0={self.H0_predicted:.4f} km/s/Mpc | "
+                  f"Omega_m0={self.Omega_m0_predicted:.4f} | "
+                  f"Omega_de0={self.Omega_de0_predicted:.4f}")
 
-    # Thin delegators kept for readability of run()'s verbose report only.
+            Ode_ini = float(self.Omega_de_def(self._N[0]))
+            print(f"[CHECK] Omega_DE(z_ini={self.ic.z_ini:.1e}) = {Ode_ini:.3e} "
+                  f"(should be << 1 for the deep-RD omega_m/omega_r extrapolation to be valid)")
+            if abs(Ode_ini) > 1e-3:
+                print("[WARNING] Omega_DE not negligible at z_ini, possible tracking "
+                      "behaviour; the RD-extrapolated initial conditions may not be safe "
+                      "for this (K, f, lambda) combination.")
+
     def _F(self, phi): return eq.F(self._phys, phi)
 
     def _build_interpolators(self, sol) -> None:
@@ -214,13 +218,11 @@ class KMouflageBackground:
         F_prime2_arr = F_phi2_arr * phi_prime_arr**2 + F_phi_arr * phi_prime2_arr
 
         A4_arr      = A_arr**(-4)
-        V_arr       = np.asarray([phys.V(ph)   for ph in phi_arr], dtype=float)
+        f_arr       = np.asarray([phys.f_pot(ph) for ph in phi_arr], dtype=float)
         rho_phi_arr = ((Z_arr + 3.0 * F_arr * av_arr**2) * phi_prime_arr**2 / a_arr**2
-                       - A4_arr * self.M4_tilde * phys.K(X_arr)
-                       + A4_arr * V_arr)
+                       - A4_arr * self.M4_tilde * (phys.K(X_arr) - f_arr))
         p_phi_arr   = (- 3.0 * F_arr * av_arr**2 * phi_prime_arr**2 / a_arr**2
-                       + A4_arr * self.M4_tilde * phys.K(X_arr)
-                       - A4_arr * V_arr)
+                       + A4_arr * self.M4_tilde * (phys.K(X_arr) - f_arr))
 
         rho_m_arr = self.rho_m0_tilde * a_arr**(-3)
         rho_r_arr = self.rho_r0_tilde * a_arr**(-4)
@@ -312,24 +314,24 @@ class KMouflageBackground:
 
     def get_physical(self, z, M_Pl=None):
         _C_KM_S   = 299792.458          # speed of light [km/s]
-        _GYR_UNIT = 977.8                # 1/H0 [Gyr]
-        _MPC_UNIT = _C_KM_S              # c/H0 [Mpc]
+        _GYR_UNIT = 977.8                # 1/H100 [Gyr]
+        _MPC_UNIT = _C_KM_S              # c/H100 [Mpc]
 
         z  = np.asarray(z, dtype=float).reshape(-1)
         N  = np.log(1.0 / (1.0 + z))
         N0 = 0.0
 
-        H0     = self.cosmo.H0_input                       # [km/s/Mpc]
+        H100   = self.cosmo.H100                            # [km/s/Mpc], fixed reference unit
         if M_Pl is None:
             M_pl = self.cosmo.M_Pl_input                    # Planck mass [GeV] (usually)
         else:
             M_pl = M_Pl
-        t_unit = _GYR_UNIT / H0                            # [Gyr] per reduced time unit
-        d_unit = _C_KM_S   / H0                            # [Mpc] per reduced distance unit
+        t_unit = _GYR_UNIT / H100                           # [Gyr] per reduced time unit
+        d_unit = _C_KM_S   / H100                           # [Mpc] per reduced distance unit
 
         # Hubble: H_conf = aH  ->  H = H_conf / a = E_conf * (1+z)
-        H_conf_phys = self.E_conf(N) * H0
-        H_phys = self.E_conf(N) * (1.0 + z) * H0
+        H_conf_phys = self.E_conf(N) * H100
+        H_phys = self.E_conf(N) * (1.0 + z) * H100
 
         # Cosmic time: cumulative from z_ini, t_today fixed at N=0
         t_today    = float(self.t_cosmic(N0)) * t_unit     # [Gyr]

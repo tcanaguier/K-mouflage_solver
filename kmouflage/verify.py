@@ -12,7 +12,7 @@ from .solver import KMouflageBackground
 
 
 def verify(bg: KMouflageBackground) -> bool:
-    """Placeholder — real checks are still in development."""
+    """Placeholder. Real checks are still in development."""
     if not hasattr(bg, 'phi'):
         raise RuntimeError("Call bg.run() before verify(bg).")
     print("[verify] work in progress, no checks implemented yet.")
