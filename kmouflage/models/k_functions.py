@@ -1,14 +1,5 @@
 """
 K-mouflage kinetic functions K(X), K'(X), K''(X) and their initial conditions.
-
-Each model is packaged as a ``KModel`` dataclass whose ``u_ini`` callable
-returns the dimensionless initial field velocity ũ = dφ̃/dN at z_ini.
-
-Convention (Section 4, report):
-    φ̃  = φ / M_Pl,0
-    ũ  = dφ̃/dN = φ̄' / (M_Pl,0 · H_0 · E)
-    X  = A²(φ) · χ_J    (Einstein-frame kinetic variable)
-    χ_J = φ̄'² / (2 M̃⁴ · a² · H_0² · E²)   in dimensionless units
 """
 
 from __future__ import annotations
@@ -20,7 +11,6 @@ from .. import equations as eq
 
 
 def attractor_u_ini(solver) -> float:
-    """Adapter matching u_ini(solver)->float. The actual attractor solve (eq. 300/305) lives in equations.attractor_u_ini."""
     s = solver
     return eq.attractor_u_ini(
         s._phys, s.ic.phi_ini, np.exp(s.N_ini), s.cosmo.omega_m, s.cosmo.omega_r,
@@ -39,8 +29,6 @@ class KModel:
     Kp   : Callable[[float], float]   dK/dX  (K'(X))
     Kpp  : Callable[[float], float]   d²K/dX²
     u_ini: Callable[[object], float]
-        Maps a ``KMouflageBackground`` instance to the dimensionless initial
-        field velocity ũ_ini = (dφ̃/dN)_ini.
     params : dict
         Free parameters for display / comparison.
     """
@@ -81,14 +69,13 @@ def make_powerlaw_K(K0: float, m: int) -> KModel:
         return X + K0 * X**m
 
     def Kp(X):
-        Xc = np.maximum(X, 1e-300)
-        return 1.0 + m * K0 * Xc ** (m - 1)
+        return 1.0 + m * K0 * X ** (m - 1)
 
     def Kpp(X):
         if m < 2:
             return 0.0
-        Xc = np.maximum(X, 1e-300)
-        return m * (m - 1) * K0 * Xc ** (m - 2)
+
+        return m * (m - 1) * K0 * X ** (m - 2)
 
     return KModel(
         name   = f"power-law (K0={K0}, m={m})",
@@ -101,13 +88,12 @@ def make_powerlaw_K(K0: float, m: int) -> KModel:
 
 
 def make_LambdaCDM_K() -> KModel:
-    """K ≡ 0 → no kinetic term, φ̃ frozen (ũ=0). Vacuum energy comes from f(φ)."""
     def K(X: float)   -> float: return 0.0
     def Kp(X: float)  -> float: return  0.0
     def Kpp(X: float) -> float: return  0.0
 
     def u_ini(solver) -> float:
-        """φ̃ is frozen → ũ = 0 exactly."""
+
         return 0.0
 
     return KModel(
@@ -121,7 +107,6 @@ def make_LambdaCDM_K() -> KModel:
 
 
 def make_arctan_K(K_star, X_star):
-    """K(X) = X + K_*[X - X_* arctan(X/X_*)],   K(0) = 0 (K-essence, screening/arctan shape)."""
     def K(X):   return X + K_star * (X - X_star * np.arctan(X / X_star))
     def Kp(X):  return 1.0 + K_star * (1.0 - 1.0 / (1.0 + (X / X_star)**2))
     def Kpp(X): return K_star * (2.0 * X / X_star**2) / (1.0 + (X / X_star)**2)**2

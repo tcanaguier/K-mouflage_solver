@@ -6,7 +6,6 @@ from typing import Callable
 
 @dataclass
 class Potential:
-    """Dimensionless f(φ): L_φ = M⁴·(K(X) - f(φ)). No free amplitude, M⁴ carries it."""
     name:   str
     f:      Callable[[float], float]
     f_phi:  Callable[[float], float]
@@ -17,7 +16,6 @@ class Potential:
 
 
 def make_constant_potential() -> Potential:
-    """f(φ) ≡ 1, standard K-mouflage (K(0)=-1 normalization). Default potential."""
     return Potential(
         name   = "constant (f=1)",
         f      = lambda phi: 1.0,
@@ -27,7 +25,6 @@ def make_constant_potential() -> Potential:
 
 
 def make_exponential_potential(lam: float = 1.0) -> Potential:
-    """f(φ) = e^{-λφ}, f(0)=1 (lam=0 reduces to make_constant_potential())."""
     def f(phi):     return np.exp(-lam * phi)
     def f_phi(phi): return -lam * f(phi)
     return Potential(
