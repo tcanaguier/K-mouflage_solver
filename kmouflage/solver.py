@@ -255,7 +255,9 @@ class KMouflageBackground:
         Ode_fried_arr = a_arr**2 * rho_de_fried_arr / denom
         Ode_def_arr   = a_arr**2 * rho_de_def_arr   / denom
 
-        mu_K_arr = (1 / F_arr) * (1.0 + 2.0 * F_arr * av_arr**2 / Z_arr)
+        # mu_K_arr_old = (1 / F_arr) * (1.0 + 2.0 * F_arr * av_arr**2 / Z_arr)
+
+        mu_K_arr = ( 1 / F_arr) * (1.0 + (2.0 * F_arr * av_arr**2 )/ (Z_arr + 6 * F_arr * av_arr**2))
 
         res_arr      = (3.0 * (H_conf_arr**2 * F_arr + H_conf_arr * F_prime_arr) / a_arr**2
                         - rho_m_arr - rho_r_arr - rho_phi_arr)
