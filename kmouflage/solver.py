@@ -264,11 +264,17 @@ class KMouflageBackground:
         rho_tot_arr  = rho_m_arr + rho_r_arr + np.abs(rho_phi_arr)
         residual_arr = np.abs(res_arr) / (rho_tot_arr + 1e-30)
 
+        #Useful quantities for pysco
+        py_DE_arr = a_arr**2 * p_de_arr / (3*H_conf_arr**2)
+
         det_arr = 2.0 * F_arr * Z_eff_arr - 6.0 * av_arr * F_arr * F_prime_arr
         M_Pl0_eff = F_arr[-1]
         self.M_Pl0_eff   = M_Pl0_eff
         self.delta_Mpl   = M_Pl0_eff - 1.0
         self.delta_H     = E_conf_arr[-1] - 1.0
+
+
+
 
         self.phi             = _interp(phi_arr)
         self.u               = _interp(u_arr)
@@ -310,6 +316,7 @@ class KMouflageBackground:
         self.Omega_de_fried  = _interp(Ode_fried_arr)
         self.Omega_de_def    = _interp(Ode_def_arr)
         self.mu_K            = _interp(mu_K_arr)
+        self.py_DE           = _interp(py_DE_arr)
         self.residual_F1     = _interp(residual_arr)
         self._N               = N_arr
         self._det             = det_arr
@@ -348,6 +355,7 @@ class KMouflageBackground:
         # Scalar field & Planck mass
         phi_phys  = self.phi(N) * M_pl                 # phi in GeV
         M_pl_eff = np.sqrt(self.F(N)) * M_pl           # effective cosmological M_pl [GeV]
+
 
         return {
             "z"          : z,
