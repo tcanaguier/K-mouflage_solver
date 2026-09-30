@@ -143,7 +143,7 @@ def linear_system(phys: Physics, phi, phi_prime, a, H_conf):
 
     M = np.array([
         [Z_eff(phys, phi, phi_prime, a), 6.0 * av * F_],
-        [-F_phi(phys, phi),              2.0 * F_     ],
+        [F_phi(phys, phi),              2.0 * F_     ],
     ])
 
     f_  = phys.f_pot(phi)
